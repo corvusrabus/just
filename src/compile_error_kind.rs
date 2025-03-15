@@ -18,7 +18,7 @@ pub(crate) enum CompileErrorKind<'src> {
     circle: Vec<&'src str>,
   },
   DependencyArgumentCountMismatch {
-    dependency: &'src str,
+    dependency: Namepath<'src>,
     found: usize,
     min: usize,
     max: usize,
@@ -144,7 +144,7 @@ pub(crate) enum CompileErrorKind<'src> {
     attribute: &'src str,
   },
   UnknownDependency {
-    recipe: &'src str,
+    recipe: Namepath<'src>,
     unknown: &'src str,
   },
   UnknownFunction {

@@ -88,7 +88,7 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
 
     let mut dependencies: Vec<Rc<Recipe>> = Vec::new();
     for dependency in &recipe.dependencies {
-      let name = dependency.recipe.lexeme();
+      let name = dependency.recipe.last().lexeme();
 
       if let Some(resolved) = self.resolved_recipes.get(name) {
         // dependency already resolved
@@ -97,11 +97,11 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
         let first = stack[0];
         stack.push(first);
         return Err(
-          dependency.recipe.error(CircularRecipeDependency {
+          dependency.recipe.last().error(CircularRecipeDependency {
             recipe: recipe.name(),
             circle: stack
               .iter()
-              .skip_while(|name| **name != dependency.recipe.lexeme())
+              .skip_while(|name| **name != dependency.recipe.last().lexeme())
               .copied()
               .collect(),
           }),
@@ -111,8 +111,8 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
         dependencies.push(self.resolve_recipe(stack, unresolved)?);
       } else {
         // dependency is unknown
-        return Err(dependency.recipe.error(UnknownDependency {
-          recipe: recipe.name(),
+        return Err(dependency.recipe.last().error(UnknownDependency {
+          recipe: dependency.recipe.clone(),
           unknown: name,
         }));
       }
@@ -157,7 +157,18 @@ mod tests {
     line:   0,
     column: 3,
     width:  1,
-    kind:   UnknownDependency{recipe: "a", unknown: "b"},
+    kind:   UnknownDependency{
+      recipe: Namepath::from(Name::from_identifier(
+        Token{
+          column: 3,
+          kind: TokenKind::Identifier,
+          length: 1,
+          line: 0,
+          offset: 3,
+          path: &Path::new("justfile"),
+          src: "a: b" })),
+          unknown: "b"
+    },
   }
 
   analysis_error! {
