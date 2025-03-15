@@ -32,6 +32,10 @@ impl<'src> Namepath<'src> {
     self.0.iter()
   }
 
+  pub(crate) fn lexed(&self) -> Vec<&str> {
+    self.0.iter().map(|name| name.lexeme()).collect()
+  }
+
   #[cfg(test)]
   pub(crate) fn len(&self) -> usize {
     self.0.len()
