@@ -219,6 +219,7 @@ mod executor;
 mod expression;
 mod fragment;
 mod function;
+mod global_recipe_resolver;
 mod interpreter;
 mod item;
 mod justfile;

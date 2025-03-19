@@ -1,59 +1,27 @@
 use {super::*, CompileErrorKind::*};
 
-pub struct ResolvedRecipes<'src> {
-  name: &'src str,
-  here: Table<'src, Rc<Recipe<'src>>>,
-  modules: Table<'src, ResolvedRecipes<'src>>,
+pub type ResolvedRecipes<'src> = Table<'src, RecipeOrModule<'src>>;
+
+pub enum RecipeOrModule<'src> {
+  Recipe(Rc<Recipe<'src>>),
+  Module {
+    name: &'src str,
+    table: ResolvedRecipes<'src>,
+  },
 }
 
-impl<'src> ResolvedRecipes<'src> {
-  pub fn values_here(&self) -> impl Iterator<Item = &Rc<Recipe<'src>>> {
-    self.here.values()
-  }
-
-  pub fn get_here(&self, name: &str) -> Option<&Rc<Recipe<'src>>> {
-    self.here.get(name)
-  }
-
-  pub fn get_path(&self, path: Namepath) -> Option<&Rc<Recipe<'src>>> {
-    let (name, remaining_path) = path.split_first();
-    let name = name.lexeme();
-    if remaining_path.is_empty() {
-      self.get_here(name)
-    } else {
-      self
-        .modules
-        .get(name)
-        .and_then(|module| module.get_slice_path(remaining_path))
-    }
-  }
-
-  fn get_slice_path(&self, path: &[Name]) -> Option<&Rc<Recipe<'src>>> {
-    let (name, remaining_path) = path
-      .split_first()
-      .expect("Internal error: method should not be called with an empty path");
-    let name = name.lexeme();
-
-    if remaining_path.is_empty() {
-      self.get_here(name)
-    } else {
-      self
-        .modules
-        .get(name)
-        .and_then(|module| module.get_slice_path(remaining_path))
-    }
-  }
-}
-
-impl<'src> Keyed<'src> for ResolvedRecipes<'src> {
+impl<'src> Keyed<'src> for RecipeOrModule<'src> {
   fn key(&self) -> &'src str {
-    self.name
+    match self {
+      RecipeOrModule::Recipe(recipe) => recipe.key(),
+      RecipeOrModule::Module { name, table } => *name,
+    }
   }
 }
 
 pub(crate) struct RecipeResolver<'src: 'run, 'run> {
   assignments: &'run Table<'src, Assignment<'src>>,
-  resolved_recipes: ResolvedRecipes<'src>,
+  resolved_recipes: Table<'src, Rc<Recipe<'src>>>,
   unresolved_recipes: Table<'src, UnresolvedRecipe<'src>>,
 }
 
@@ -62,10 +30,9 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
     assignments: &'run Table<'src, Assignment<'src>>,
     settings: &Settings,
     unresolved_recipes: Table<'src, UnresolvedRecipe<'src>>,
-    resolved_recipes: ResolvedRecipes<'src>,
-  ) -> CompileResult<'src, ResolvedRecipes<'src>> {
+  ) -> CompileResult<'src, Table<'src, Rc<Recipe<'src>>>> {
     let mut resolver = Self {
-      resolved_recipes,
+      resolved_recipes: Table::new(),
       unresolved_recipes,
       assignments,
     };
@@ -74,7 +41,7 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
       resolver.resolve_recipe(&mut Vec::new(), unresolved)?;
     }
 
-    for recipe in resolver.resolved_recipes.values_here() {
+    for recipe in resolver.resolved_recipes.values() {
       for (i, parameter) in recipe.parameters.iter().enumerate() {
         if let Some(expression) = &parameter.default {
           for variable in expression.variables() {
@@ -132,7 +99,7 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
     stack: &mut Vec<&'src str>,
     recipe: UnresolvedRecipe<'src>,
   ) -> CompileResult<'src, Rc<Recipe<'src>>> {
-    if let Some(resolved) = self.resolved_recipes.get_here(recipe.name()) {
+    if let Some(resolved) = self.resolved_recipes.get(recipe.name()) {
       return Ok(Rc::clone(resolved));
     }
 
@@ -140,12 +107,12 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
 
     let mut dependencies: Vec<Rc<Recipe>> = Vec::new();
     for dependency in &recipe.dependencies {
-      let path = dependency.recipe;
+      let name = dependency.recipe.last().lexeme();
 
-      if let Some(resolved) = self.resolved_recipes.get_path(path) {
+      if let Some(resolved) = self.resolved_recipes.get(name) {
         // dependency already resolved
         dependencies.push(Rc::clone(resolved));
-      } else if stack.contains(&path) {
+      } else if stack.contains(&name) {
         let first = stack[0];
         stack.push(first);
         return Err(
@@ -158,14 +125,14 @@ impl<'src: 'run, 'run> RecipeResolver<'src, 'run> {
               .collect(),
           }),
         );
-      } else if let Some(unresolved) = self.unresolved_recipes.remove(path) {
+      } else if let Some(unresolved) = self.unresolved_recipes.remove(name) {
         // resolve unresolved dependency
         dependencies.push(self.resolve_recipe(stack, unresolved)?);
       } else {
         // dependency is unknown
         return Err(dependency.recipe.last().error(UnknownDependency {
           recipe: dependency.recipe.clone(),
-          unknown: path,
+          unknown: name,
         }));
       }
     }
