@@ -179,7 +179,7 @@ mod tests {
           length: 1,
           line: 0,
           offset: 3,
-          path: &Path::new("justfile"),
+          path: Path::new("justfile"),
           src: "a: b" }))
     },
   }
